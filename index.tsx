@@ -230,116 +230,152 @@ const Sidebar = ({
 // TIMER VIEW
 // ---------------------------------------------------------
 
+// TimerView - replace your existing TimerView component with this exact block
 const TimerView = ({ addWorkLog }: { addWorkLog: (seconds: number) => void }) => {
-  const [timeLeft, setTimeLeft] = useState(25 * 60);
-  const [isActive, setIsActive] = useState(false);
-  const [mode, setMode] = useState<"focus" | "short" | "long">("focus");
-  const [showMeow, setShowMeow] = useState(false);
-
-  const totalTime =
-    mode === "focus" ? 25 * 60 : mode === "short" ? 5 * 60 : 15 * 60;
-
-  const progressPercent = ((totalTime - timeLeft) / totalTime) * 100;
-
-  useEffect(() => {
-    let interval: any = null;
-    if (isActive && timeLeft > 0) {
-      interval = setInterval(() => setTimeLeft((prev) => prev - 1), 1000);
-    } else if (timeLeft === 0 && isActive) {
+    const [timeLeft, setTimeLeft] = useState<number>(25 * 60);
+    const [isActive, setIsActive] = useState<boolean>(false);
+    const [mode, setMode] = useState<"focus" | "short" | "long">("focus");
+    const [showMeow, setShowMeow] = useState<boolean>(false);
+  
+    // single source of truth for durations
+    const secondsForMode = (m: "focus" | "short" | "long") =>
+      m === "focus" ? 25 * 60 : m === "short" ? 5 * 60 : 15 * 60;
+  
+    // unified mode setter - sets mode and immediately sets timeLeft to correct seconds
+    const setTimerMode = (newMode: "focus" | "short" | "long") => {
       setIsActive(false);
-      setShowMeow(true);
-      if (mode === "focus") {
-        addWorkLog(25 * 60);
-        new Audio(
-          "https://actions.google.com/sounds/v1/alarms/beep_short.ogg"
-        ).play();
+      setShowMeow(false);
+      setMode(newMode);
+      setTimeLeft(secondsForMode(newMode));
+    };
+  
+    // reset using current mode (safe because we use secondsForMode)
+    const resetTimer = () => {
+      setIsActive(false);
+      setShowMeow(false);
+      setTimeLeft(secondsForMode(mode));
+    };
+  
+    // main timer effect
+    useEffect(() => {
+      let interval: number | null = null;
+      if (isActive && timeLeft > 0) {
+        interval = window.setInterval(() => {
+          setTimeLeft((prev) => prev - 1);
+        }, 1000);
+      } else if (isActive && timeLeft === 0) {
+        // finished
+        setIsActive(false);
+        setShowMeow(true);
+        if (mode === "focus") {
+          // record work only for focus sessions
+          addWorkLog(secondsForMode("focus"));
+          const audio = new Audio(
+            "https://actions.google.com/sounds/v1/alarms/beep_short.ogg"
+          );
+          audio.play().catch(() => {});
+        }
       }
-    }
-    return () => clearInterval(interval);
-  }, [isActive, timeLeft, mode, addWorkLog]);
-
-  const toggleTimer = () => {
-    setShowMeow(false);
-    setIsActive(!isActive);
-  };
-
-  const resetTimer = () => {
-    setIsActive(false);
-    setShowMeow(false);
-    setTimeLeft(mode === "focus" ? 25 * 60 : mode === "short" ? 5 * 60 : 15 * 60);
-  };
-
-  return (
-    <div className="flex flex-col items-center justify-evenly h-[calc(100vh-6rem)] p-4">
-      {/* Mode buttons */}
-      <div className="flex space-x-4">
-        {["focus", "short", "long"].map((m) => (
-          <button
-            key={m}
-            onClick={() => {
-              setMode(m as any);
-              resetTimer();
-            }}
-            className={`px-6 py-2 text-xl border ${
-              mode === m
-                ? "border-[#ff10f0] bg-[#ff10f0] text-black"
-                : "border-[#f0f0f0] text-[#f0f0f0] hover:border-[#ff10f0] hover:text-[#ff10f0]"
-            }`}
-          >
-            {m === "focus" ? "work" : m === "short" ? "break" : "long break"}
-          </button>
-        ))}
-      </div>
-
-      {/* Timer */}
-      <div className="text-center">
-        {showMeow ? (
-          <div className="animate-bounce">
-            <span className="text-8xl font-black text-[#ff10f0]">meow</span>
-          </div>
-        ) : (
-          <div
-            className="text-9xl font-medium text-[#ff10f0] tabular-nums tracking-tight"
-            style={{ WebkitTextStroke: "2px #ff10f0" }}
-          >
-            {formatTime(timeLeft)}
-          </div>
-        )}
-      </div>
-
-      {/* Progress */}
-      <div className="w-full max-w-2xl relative h-12 flex items-center">
-        <div className="w-full h-[1px] bg-[#f0f0f0] absolute"></div>
-
-        <div className="absolute w-full pointer-events-none">
-          <div
-            className="absolute top-1/2 -mt-4 transition-all duration-1000"
-            style={{ left: `calc(${progressPercent}% - 20px)` }}
-          >
-            <i className="fas fa-cat text-4xl text-[#f0f0f0]" style={{ transform: "scaleX(-1)" }}></i>
+      return () => {
+        if (interval) clearInterval(interval);
+      };
+    }, [isActive, timeLeft, mode, addWorkLog]);
+  
+    const toggleTimer = () => {
+      setShowMeow(false);
+      setIsActive((s) => !s);
+    };
+  
+    return (
+      <div className="flex flex-col items-center justify-evenly h-[calc(100vh-6rem)] p-4 relative overflow-hidden">
+        {/* Mode Selectors */}
+        <div className="flex space-x-4 z-10">
+          {(["focus", "short", "long"] as const).map((m) => (
+            <button
+              key={m}
+              onClick={() => setTimerMode(m)}
+              className={`px-6 py-2 text-xl border transition-all ${
+                mode === m
+                  ? "border-[#ff10f0] bg-[#ff10f0] text-black"
+                  : "border-[#f0f0f0] text-[#f0f0f0] hover:border-[#ff10f0] hover:text-[#ff10f0]"
+              }`}
+            >
+              {m === "focus" ? "work" : m === "short" ? "break" : "long break"}
+              <span className="ml-2 text-sm text-[#f0f0f0] opacity-60">
+                ({Math.floor(secondsForMode(m) / 60)}m)
+              </span>
+            </button>
+          ))}
+        </div>
+  
+        {/* Timer Display */}
+        <div className="text-center z-10 relative">
+          {showMeow ? (
+            <div className="animate-bounce">
+              <span className="text-8xl font-black text-[#ff10f0]">meow</span>
+            </div>
+          ) : (
+            <div
+              className="text-9xl font-medium text-[#ff10f0] tabular-nums tracking-tight"
+              style={{ WebkitTextStroke: "2px #ff10f0" }}
+            >
+              {`${Math.floor(timeLeft / 60)
+                .toString()
+                .padStart(2, "0")}:${(timeLeft % 60).toString().padStart(2, "0")}`}
+            </div>
+          )}
+        </div>
+  
+        {/* Progress Bar (keeps using timeLeft & secondsForMode(mode)) */}
+        <div className="w-full max-w-2xl relative h-12 flex items-center justify-center">
+          <div className="w-full h-[1px] bg-[#f0f0f0] absolute"></div>
+          <div className="absolute top-0 h-full w-full pointer-events-none">
+            <div
+              className="absolute top-1/2 -mt-4 transition-all duration-1000 ease-linear flex flex-col items-center"
+              style={{
+                left: `calc(${((secondsForMode(mode) - timeLeft) / secondsForMode(mode)) * 100}% - 20px)`,
+              }}
+            >
+              <i className="fas fa-cat text-4xl text-[#f0f0f0]" style={{ transform: "scaleX(-1)" }}></i>
+            </div>
           </div>
         </div>
+  
+        {/* Controls */}
+        <div className="flex space-x-8 z-10">
+          <button
+            onClick={toggleTimer}
+            className="w-20 h-20 rounded-full bg-[#f0f0f0] text-black flex items-center justify-center text-2xl hover:bg-[#ff10f0] hover:scale-105 transition-all"
+          >
+            <i className={`fas ${isActive ? "fa-pause" : "fa-play"}`}></i>
+          </button>
+  
+          <button
+            onClick={resetTimer}
+            className="w-20 h-20 rounded-full border border-[#f0f0f0] text-[#f0f0f0] flex items-center justify-center text-xl hover:border-[#ff10f0] hover:text-[#ff10f0] transition-colors"
+          >
+            <i className="fas fa-redo"></i>
+          </button>
+        </div>
+  
+        {/* Manual Entry */}
+        <div className="text-center z-10">
+          <button
+            onClick={() => {
+              const mins = prompt("how many minutes did you work?");
+              if (mins && !isNaN(parseInt(mins))) {
+                addWorkLog(parseInt(mins) * 60);
+                alert(`added ${mins} minutes manually.`);
+              }
+            }}
+            className="text-lg text-[#f0f0f0] hover:text-[#ff10f0] transition-colors"
+          >
+            + add manual log
+          </button>
+        </div>
       </div>
-
-      {/* Controls */}
-      <div className="flex space-x-8">
-        <button
-          onClick={toggleTimer}
-          className="w-20 h-20 rounded-full bg-[#f0f0f0] text-black flex justify-center items-center text-2xl hover:bg-[#ff10f0]"
-        >
-          <i className={`fas ${isActive ? "fa-pause" : "fa-play"}`}></i>
-        </button>
-
-        <button
-          onClick={resetTimer}
-          className="w-20 h-20 rounded-full border border-[#f0f0f0] text-[#f0f0f0] text-xl hover:border-[#ff10f0]"
-        >
-          <i className="fas fa-redo"></i>
-        </button>
-      </div>
-    </div>
-  );
-};
+    );
+  };  
 
 // ---------------------------------------------------------
 // JOURNAL VIEW
