@@ -1,15 +1,57 @@
 import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
+import * as firebaseApp from "firebase/app";
+import { 
+  getAuth, 
+  GoogleAuthProvider, 
+  signInWithPopup, 
+  signOut, 
+  onAuthStateChanged,
+  User as FirebaseUser
+} from "firebase/auth";
+import { 
+  getFirestore, 
+  collection, 
+  doc, 
+  setDoc, 
+  getDoc, 
+  onSnapshot, 
+  query, 
+  orderBy 
+} from "firebase/firestore";
+
+// --- Firebase Config ---
+// PASTE YOUR FIREBASE KEYS HERE
+const firebaseConfig = {
+  apiKey: "REPLACE_WITH_YOUR_API_KEY",
+  authDomain: "REPLACE_WITH_YOUR_PROJECT_ID.firebaseapp.com",
+  projectId: "REPLACE_WITH_YOUR_PROJECT_ID",
+  storageBucket: "REPLACE_WITH_YOUR_PROJECT_ID.appspot.com",
+  messagingSenderId: "REPLACE_WITH_YOUR_SENDER_ID",
+  appId: "REPLACE_WITH_YOUR_APP_ID"
+};
+
+// Initialize Firebase
+let app;
+let auth: any;
+let db: any;
+let isFirebaseInitialized = false;
+
+try {
+  // Simple check to ensure placeholder keys are replaced
+  if (!firebaseConfig.apiKey.includes("REPLACE")) {
+    app = firebaseApp.initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    db = getFirestore(app);
+    isFirebaseInitialized = true;
+  }
+} catch (e) {
+  console.error("Firebase init error:", e);
+}
 
 // --- Types & Constants ---
 
 type View = "timer" | "journal" | "progress";
-
-interface User {
-  uid: string;
-  displayName: string | null;
-  photoURL: string | null;
-}
 
 interface WorkLog {
   id: string;
@@ -26,10 +68,6 @@ interface DailyJournal {
 interface UserSettings {
   startDate: number; // Timestamp of first use
 }
-
-const NEON_PINK = "#ff10f0";
-const OFF_WHITE = "#f0f0f0";
-const BLACK = "#000000";
 
 // --- Helper Functions ---
 
@@ -77,7 +115,7 @@ const Sidebar = ({
   currentView: View;
   setView: (v: View) => void;
   closeSidebar: () => void;
-  user: User | null;
+  user: FirebaseUser | null;
   handleLogin: () => void;
   handleLogout: () => void;
 }) => {
@@ -134,7 +172,7 @@ const Sidebar = ({
                     </div>
                     <div className="overflow-hidden">
                         <p className="text-sm leading-none truncate">{user.displayName}</p>
-                        <p className="text-xs text-[#f0f0f0] opacity-50 truncate">synced locally</p>
+                        <p className="text-xs text-[#f0f0f0] opacity-50 truncate">synced with cloud</p>
                     </div>
                 </div>
                 <button 
@@ -151,8 +189,9 @@ const Sidebar = ({
                     onClick={handleLogin}
                     className="w-full bg-[#f0f0f0] text-black py-2 hover:bg-[#e0e0e0] transition-colors"
                 >
-                    login as guest
+                    login with google
                 </button>
+                {!isFirebaseInitialized && <p className="text-xs text-red-500 mt-2">firebase keys missing in code!</p>}
             </div>
         )}
       </div>
@@ -238,7 +277,7 @@ const TimerView = ({ addWorkLog }: { addWorkLog: (seconds: number) => void }) =>
       <div className="text-center z-10 relative">
         {showMeow ? (
             <div className="animate-bounce">
-                <span className="text-8xl font-medium text-[#ff10f0]">meow</span>
+                <span className="text-8xl font-black text-[#ff10f0]">meow</span>
             </div>
         ) : (
             <div className="text-9xl font-medium text-[#ff10f0] tabular-nums tracking-tight" style={{ WebkitTextStroke: "2px #ff10f0" }}>
@@ -461,7 +500,7 @@ const App = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   
   // Auth State
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<FirebaseUser | null>(null);
 
   // Data State
   const [logs, setLogs] = useState<WorkLog[]>([]);
@@ -469,61 +508,75 @@ const App = () => {
   const [settings, setSettings] = useState<UserSettings>({ startDate: Date.now() });
   const [streak, setStreak] = useState(0);
 
-  // Load User & Settings on Mount
+  // 1. Auth Listener
   useEffect(() => {
-    // Auth Check
-    const storedUser = localStorage.getItem("pomoneon_user");
-    if (storedUser) {
-        setUser(JSON.parse(storedUser));
-    }
-
-    // Settings
-    const storedSettings = localStorage.getItem("pomoneon_settings");
-    if (storedSettings) {
-        setSettings(JSON.parse(storedSettings));
-    } else {
-        const initialSettings = { startDate: Date.now() };
-        setSettings(initialSettings);
-        localStorage.setItem("pomoneon_settings", JSON.stringify(initialSettings));
-    }
+    if (!isFirebaseInitialized) return;
+    
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+    });
+    return () => unsubscribe();
   }, []);
 
-  // Load Data when User changes
+  // 2. Fetch Data when User Changes
   useEffect(() => {
-    if (!user) {
-        setLogs([]);
-        setJournals([]);
-        setStreak(0);
-        return;
+    if (!user || !isFirebaseInitialized) {
+      setLogs([]);
+      setJournals([]);
+      setStreak(0);
+      return;
     }
 
-    // Logs
-    const storedLogs = localStorage.getItem(`pomoneon_logs_${user.uid}`);
-    if (storedLogs) {
-        setLogs(JSON.parse(storedLogs));
-    } else {
-        setLogs([]);
-    }
+    // A) Listen to Logs
+    const logsRef = collection(db, "users", user.uid, "logs");
+    const qLogs = query(logsRef, orderBy("timestamp", "desc"));
+    const unsubLogs = onSnapshot(qLogs, (snapshot) => {
+      const fetchedLogs = snapshot.docs.map(doc => doc.data() as WorkLog);
+      setLogs(fetchedLogs);
+    });
 
-    // Journals
-    const storedJournals = localStorage.getItem(`pomoneon_journals_${user.uid}`);
-    if (storedJournals) {
-        setJournals(JSON.parse(storedJournals));
-    } else {
-        setJournals([]);
-    }
+    // B) Listen to Journals
+    const journalsRef = collection(db, "users", user.uid, "journals");
+    const qJournals = query(journalsRef);
+    const unsubJournals = onSnapshot(qJournals, (snapshot) => {
+      const fetchedJournals = snapshot.docs.map(doc => doc.data() as DailyJournal);
+      fetchedJournals.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      setJournals(fetchedJournals);
+    });
+
+    // C) Get Settings (Start Date)
+    const settingsRef = doc(db, "users", user.uid, "settings", "general");
+    getDoc(settingsRef).then((docSnap) => {
+      if (docSnap.exists()) {
+        setSettings(docSnap.data() as UserSettings);
+      } else {
+        // Init settings
+        const initialSettings = { startDate: Date.now() };
+        setDoc(settingsRef, initialSettings);
+        setSettings(initialSettings);
+      }
+    });
+
+    return () => {
+      unsubLogs();
+      unsubJournals();
+    };
   }, [user]);
 
-  // Streak Calculation
+  // 3. Streak Calculation
   useEffect(() => {
     if (journals.length === 0) {
         setStreak(0);
         return;
     }
     
+    // Sort logic already handled in fetch, but double check
     const sorted = [...journals].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     let currentStreak = 0;
     
+    // Simple logic: consecutive days with >= 3 stars
+    // Note: This logic assumes daily usage. For robustness, you'd check dates. 
+    // Here we just count top valid entries for simplicity as requested.
     for (let entry of sorted) {
         if (entry.rating >= 3) currentStreak++;
         else break;
@@ -531,25 +584,26 @@ const App = () => {
     setStreak(currentStreak);
   }, [journals]);
 
-  const handleLogin = () => {
-    // Mock Login
-    const newUser: User = {
-        uid: "local_user_1",
-        displayName: "guest user",
-        photoURL: null
-    };
-    setUser(newUser);
-    localStorage.setItem("pomoneon_user", JSON.stringify(newUser));
+  const handleLogin = async () => {
+    if (!isFirebaseInitialized) {
+        alert("Firebase keys not set! Please update the code.");
+        return;
+    }
+    const provider = new GoogleAuthProvider();
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (error) {
+      console.error("Login failed", error);
+    }
   };
 
-  const handleLogout = () => {
-    setUser(null);
-    localStorage.removeItem("pomoneon_user");
+  const handleLogout = async () => {
+    if (auth) await signOut(auth);
   };
 
-  const addWorkLog = (seconds: number) => {
-    if (!user) {
-        alert("please login to save progress!");
+  const addWorkLog = async (seconds: number) => {
+    if (!user || !isFirebaseInitialized) {
+        alert("Please login to save progress!");
         return;
     }
     
@@ -559,14 +613,19 @@ const App = () => {
         durationSeconds: seconds,
     };
     
-    const updatedLogs = [...logs, newLog];
-    setLogs(updatedLogs);
-    localStorage.setItem(`pomoneon_logs_${user.uid}`, JSON.stringify(updatedLogs));
+    // Optimistic UI update not needed due to onSnapshot, but good for UX
+    // setLogs([newLog, ...logs]);
+
+    try {
+        await setDoc(doc(db, "users", user.uid, "logs", newLog.id), newLog);
+    } catch (e) {
+        console.error("Error saving log", e);
+    }
   };
 
-  const saveJournalEntry = (highlight: string, rating: number) => {
-    if (!user) {
-        alert("please login to save journal!");
+  const saveJournalEntry = async (highlight: string, rating: number) => {
+    if (!user || !isFirebaseInitialized) {
+        alert("Please login to save journal!");
         return;
     }
     
@@ -577,14 +636,12 @@ const App = () => {
         rating
     };
     
-    // Remove existing entry for today if any, and prepend new one
-    const otherJournals = journals.filter(j => j.date !== today);
-    const updatedJournals = [newEntry, ...otherJournals];
-    // Keep sorted desc
-    updatedJournals.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    
-    setJournals(updatedJournals);
-    localStorage.setItem(`pomoneon_journals_${user.uid}`, JSON.stringify(updatedJournals));
+    try {
+        // Use date as ID to ensure one entry per day
+        await setDoc(doc(db, "users", user.uid, "journals", today), newEntry);
+    } catch (e) {
+        console.error("Error saving journal", e);
+    }
   };
 
   const getDaysActive = () => {
