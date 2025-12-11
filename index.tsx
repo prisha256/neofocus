@@ -1,47 +1,15 @@
 import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { initializeApp } from "firebase/app";
-import { 
-  getAuth, 
-  signInWithPopup, 
-  GoogleAuthProvider, 
-  signOut, 
-  onAuthStateChanged,
-  User 
-} from "firebase/auth";
-import { 
-  getFirestore, 
-  collection, 
-  addDoc, 
-  query, 
-  where, 
-  onSnapshot,
-  Timestamp,
-  orderBy,
-  setDoc,
-  doc,
-  getDoc
-} from "firebase/firestore";
-
-// --- FIREBASE CONFIGURATION ---
-// TODO: PASTE YOUR FIREBASE CONFIG HERE
-const firebaseConfig = {
-  apiKey: "AIzaSyAGLF_lnu748s2ilh0pUO3fR3zUZr2sJs8",
-  authDomain: "neofocus-b0bf7.firebaseapp.com",
-  projectId: "neofocus-b0bf7",
-  storageBucket: "neofocus-b0bf7.firebasestorage.app",
-  messagingSenderId: "106376608408",
-  appId: "1:106376608408:web:eb9bc9a2d4ae042690aeed"
-};
-
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
 
 // --- Types & Constants ---
 
 type View = "timer" | "journal" | "progress";
+
+interface User {
+  uid: string;
+  displayName: string | null;
+  photoURL: string | null;
+}
 
 interface WorkLog {
   id: string;
@@ -166,7 +134,7 @@ const Sidebar = ({
                     </div>
                     <div className="overflow-hidden">
                         <p className="text-sm leading-none truncate">{user.displayName}</p>
-                        <p className="text-xs text-[#f0f0f0] opacity-50 truncate">synced to cloud</p>
+                        <p className="text-xs text-[#f0f0f0] opacity-50 truncate">synced locally</p>
                     </div>
                 </div>
                 <button 
@@ -183,7 +151,7 @@ const Sidebar = ({
                     onClick={handleLogin}
                     className="w-full bg-[#f0f0f0] text-black py-2 hover:bg-[#e0e0e0] transition-colors"
                 >
-                    login with google
+                    login as guest
                 </button>
             </div>
         )}
@@ -500,33 +468,27 @@ const App = () => {
   const [journals, setJournals] = useState<DailyJournal[]>([]);
   const [settings, setSettings] = useState<UserSettings>({ startDate: Date.now() });
   const [streak, setStreak] = useState(0);
-  const [dbError, setDbError] = useState<string | null>(null);
 
-  // Auth Listener
+  // Load User & Settings on Mount
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setDbError(null); // Clear errors on user switch
-      if (currentUser) {
-        // Initialize User Settings if needed
-        const settingsRef = doc(db, "users", currentUser.uid, "settings", "main");
-        getDoc(settingsRef).then((snap) => {
-            if (!snap.exists()) {
-                setDoc(settingsRef, { startDate: Date.now() });
-            } else {
-                setSettings(snap.data() as UserSettings);
-            }
-        }).catch(err => {
-            console.error("error fetching settings:", err);
-            // This is usually the first thing to fail if DB doesn't exist
-            setDbError("database not found. please create firestore database in console (see instructions).");
-        });
-      }
-    });
-    return () => unsubscribe();
+    // Auth Check
+    const storedUser = localStorage.getItem("pomoneon_user");
+    if (storedUser) {
+        setUser(JSON.parse(storedUser));
+    }
+
+    // Settings
+    const storedSettings = localStorage.getItem("pomoneon_settings");
+    if (storedSettings) {
+        setSettings(JSON.parse(storedSettings));
+    } else {
+        const initialSettings = { startDate: Date.now() };
+        setSettings(initialSettings);
+        localStorage.setItem("pomoneon_settings", JSON.stringify(initialSettings));
+    }
   }, []);
 
-  // Data Listener (Realtime)
+  // Load Data when User changes
   useEffect(() => {
     if (!user) {
         setLogs([]);
@@ -535,30 +497,21 @@ const App = () => {
         return;
     }
 
-    // Logs Listener
-    const logsQ = query(collection(db, "users", user.uid, "logs"), orderBy("timestamp", "asc"));
-    const unsubLogs = onSnapshot(logsQ, (snapshot) => {
-        const fetchedLogs = snapshot.docs.map(d => ({ ...d.data(), id: d.id } as WorkLog));
-        setLogs(fetchedLogs);
-    }, (error) => {
-        console.error("logs listener error", error);
-        setDbError("please create firestore database in firebase console.");
-    });
+    // Logs
+    const storedLogs = localStorage.getItem(`pomoneon_logs_${user.uid}`);
+    if (storedLogs) {
+        setLogs(JSON.parse(storedLogs));
+    } else {
+        setLogs([]);
+    }
 
-    // Journals Listener
-    const journalQ = query(collection(db, "users", user.uid, "journals"), orderBy("date", "desc"));
-    const unsubJournals = onSnapshot(journalQ, (snapshot) => {
-        const fetchedJournals = snapshot.docs.map(d => d.data() as DailyJournal);
-        setJournals(fetchedJournals);
-    }, (error) => {
-        console.error("journal listener error", error);
-        // We set error in logs listener already, but good to have fallback
-    });
-
-    return () => {
-        unsubLogs();
-        unsubJournals();
-    };
+    // Journals
+    const storedJournals = localStorage.getItem(`pomoneon_journals_${user.uid}`);
+    if (storedJournals) {
+        setJournals(JSON.parse(storedJournals));
+    } else {
+        setJournals([]);
+    }
   }, [user]);
 
   // Streak Calculation
@@ -578,56 +531,60 @@ const App = () => {
     setStreak(currentStreak);
   }, [journals]);
 
-  const handleLogin = async () => {
-    try {
-        const provider = new GoogleAuthProvider();
-        await signInWithPopup(auth, provider);
-    } catch (error) {
-        console.error("login failed", error);
-        alert("login failed, check console");
-    }
+  const handleLogin = () => {
+    // Mock Login
+    const newUser: User = {
+        uid: "local_user_1",
+        displayName: "guest user",
+        photoURL: null
+    };
+    setUser(newUser);
+    localStorage.setItem("pomoneon_user", JSON.stringify(newUser));
   };
 
-  const handleLogout = async () => {
-    await signOut(auth);
+  const handleLogout = () => {
+    setUser(null);
+    localStorage.removeItem("pomoneon_user");
   };
 
-  const addWorkLog = async (seconds: number) => {
+  const addWorkLog = (seconds: number) => {
     if (!user) {
         alert("please login to save progress!");
         return;
     }
-    try {
-        const newLog: Omit<WorkLog, "id"> = {
-            timestamp: Date.now(),
-            durationSeconds: seconds,
-        };
-        await addDoc(collection(db, "users", user.uid, "logs"), newLog);
-    } catch (e: any) {
-        console.error(e);
-        if (e.message.includes("billing") || e.code === "permission-denied" || e.code === "not-found") {
-             setDbError("database error: please create firestore database in console.");
-        }
-        alert("could not save log. check connection or database setup.");
-    }
+    
+    const newLog: WorkLog = {
+        id: Date.now().toString(),
+        timestamp: Date.now(),
+        durationSeconds: seconds,
+    };
+    
+    const updatedLogs = [...logs, newLog];
+    setLogs(updatedLogs);
+    localStorage.setItem(`pomoneon_logs_${user.uid}`, JSON.stringify(updatedLogs));
   };
 
-  const saveJournalEntry = async (highlight: string, rating: number) => {
+  const saveJournalEntry = (highlight: string, rating: number) => {
     if (!user) {
         alert("please login to save journal!");
         return;
     }
-    try {
-        const today = getTodayKey();
-        await setDoc(doc(db, "users", user.uid, "journals", today), {
-            date: today,
-            highlight,
-            rating
-        });
-    } catch (e: any) {
-        console.error(e);
-        alert("could not save journal. check connection or database setup.");
-    }
+    
+    const today = getTodayKey();
+    const newEntry: DailyJournal = {
+        date: today,
+        highlight,
+        rating
+    };
+    
+    // Remove existing entry for today if any, and prepend new one
+    const otherJournals = journals.filter(j => j.date !== today);
+    const updatedJournals = [newEntry, ...otherJournals];
+    // Keep sorted desc
+    updatedJournals.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    
+    setJournals(updatedJournals);
+    localStorage.setItem(`pomoneon_journals_${user.uid}`, JSON.stringify(updatedJournals));
   };
 
   const getDaysActive = () => {
@@ -646,13 +603,6 @@ const App = () => {
 
   return (
     <div className="min-h-screen bg-black text-[#f0f0f0] selection:bg-[#ff10f0] selection:text-black lowercase">
-      {/* DB Error Banner */}
-      {dbError && (
-        <div className="fixed bottom-0 left-0 w-full bg-[#ff10f0] text-black text-center p-3 text-sm font-bold z-[100] animate-pulse">
-            system error: {dbError} (go to firebase console &gt; build &gt; firestore &gt; create database)
-        </div>
-      )}
-
       {/* Top Navbar */}
       <header className="fixed top-0 left-0 w-full h-16 flex items-center justify-between px-6 z-50 bg-black border-b border-[#f0f0f0]">
         <div className="flex items-center space-x-6">
