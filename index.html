@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>neonfocus</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Raleway:wght@100;300;400;500;700;900&display=swap" rel="stylesheet">
+    <style>
+      :root {
+        --color-bg: #000000;
+        --color-primary: #ff10f0;
+        --color-text: #f0f0f0;
+      }
+      body {
+        background-color: var(--color-bg);
+        color: var(--color-text);
+        font-family: 'Raleway', sans-serif;
+        text-transform: lowercase; /* Force lowercase everywhere */
+      }
+      /* Custom Utility for the specific Neon Pink without Glow */
+      .text-neon {
+        color: var(--color-primary);
+      }
+      .bg-neon {
+        background-color: var(--color-primary);
+      }
+      .border-neon {
+        border-color: var(--color-primary);
+      }
+      
+      /* Scrollbar hiding */
+      .scrollbar-hide::-webkit-scrollbar {
+          display: none;
+      }
+      .scrollbar-hide {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+      }
+      
+      /* Input autofill fix for dark mode */
+      input:-webkit-autofill,
+      input:-webkit-autofill:hover, 
+      input:-webkit-autofill:focus, 
+      textarea:-webkit-autofill,
+      textarea:-webkit-autofill:hover,
+      textarea:-webkit-autofill:focus {
+        -webkit-text-fill-color: #f0f0f0;
+        -webkit-box-shadow: 0 0 0px 1000px #000 inset;
+        transition: background-color 5000s ease-in-out 0s;
+      }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.1",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.1/",
+    "firebase/": "https://esm.sh/firebase@^12.6.0/",
+    "react/": "https://esm.sh/react@^19.2.1/",
+    "vite": "https://esm.sh/vite@^7.2.7",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
