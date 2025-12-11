@@ -22,13 +22,14 @@ import {
 
 // --- Firebase Config ---
 // PASTE YOUR FIREBASE KEYS HERE
+
 const firebaseConfig = {
-  apiKey: "REPLACE_WITH_YOUR_API_KEY",
-  authDomain: "REPLACE_WITH_YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "REPLACE_WITH_YOUR_PROJECT_ID",
-  storageBucket: "REPLACE_WITH_YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "REPLACE_WITH_YOUR_SENDER_ID",
-  appId: "REPLACE_WITH_YOUR_APP_ID"
+    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
 };
 
 // Initialize Firebase
@@ -37,7 +38,7 @@ let auth: any;
 let db: any;
 let isFirebaseInitialized = false;
 
-try {
+/* try {
   // Simple check to ensure placeholder keys are replaced
   if (!firebaseConfig.apiKey.includes("REPLACE")) {
     app = firebaseApp.initializeApp(firebaseConfig);
@@ -47,7 +48,7 @@ try {
   }
 } catch (e) {
   console.error("Firebase init error:", e);
-}
+} */
 
 // --- Types & Constants ---
 
